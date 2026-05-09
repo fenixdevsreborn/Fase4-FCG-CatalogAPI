@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: catalogapi-ingress
+  namespace: catalogapi
+  labels:
+    app: catalogapi
+  annotations:
+    # Ajuste conforme seu ingress controller
+    # Para NGINX Ingress Controller:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    # Para outros ingress controllers, ajuste as annotations conforme necessário
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"  # Para TLS automático
+spec:
+  ingressClassName: nginx  # Ajuste conforme seu ingress controller
+  rules:
+  - host: catalogapi.example.com  # Altere para seu domínio
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: catalogapi-service
+            port:
+              number: 8080
+  # TLS pode ser habilitado em produção
+  # tls:
+  # - hosts:
+  #   - catalogapi.example.com
+  #   secretName: catalogapi-tls-secret

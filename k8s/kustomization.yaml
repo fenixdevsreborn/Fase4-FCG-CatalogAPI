@@ -1,0 +1,25 @@
+# Kustomization file para facilitar o deploy
+# Uso: kubectl apply -k k8s/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: catalogapi
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secrets.yaml
+  - postgres/configmap.yaml
+  - postgres/init-script-configmap.yaml
+  - postgres/pvc.yaml
+  - postgres/deployment.yaml
+  - postgres/service.yaml
+  - rabbitmq/pvc.yaml
+  - rabbitmq/deployment.yaml
+  - rabbitmq/service.yaml
+  - auth-service/deployment.yaml
+  - auth-service/service.yaml
+  - catalogapi/deployment.yaml
+  - catalogapi/service.yaml
+  - catalogapi/hpa.yaml
+  - ingress.yaml

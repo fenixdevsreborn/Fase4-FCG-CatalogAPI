@@ -1,0 +1,130 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalogapi
+  namespace: catalogapi
+  labels:
+    app: catalogapi
+    component: api
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: catalogapi
+  template:
+    metadata:
+      labels:
+        app: catalogapi
+        component: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: catalogapi
+        image: catalogapi:latest
+        # Em produção, use uma imagem de registry: registry.example.com/catalogapi:v1.0.0
+        # Para build local, você precisará fazer build da imagem primeiro
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: ASPNETCORE_ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: catalogapi-config
+              key: ASPNETCORE_ENVIRONMENT
+        - name: ASPNETCORE_URLS
+          valueFrom:
+            configMapKeyRef:
+              name: catalogapi-config
+              key: ASPNETCORE_URLS
+        - name: ConnectionStrings__CatalogDatabase
+          valueFrom:
+            secretKeyRef:
+              name: catalogapi-secrets
+              key: postgres-connection-string
+        - name: RabbitMQ__Host
+          valueFrom:
+            configMapKeyRef:
+              name: catalogapi-config
+              key: RabbitMQ__Host
+        - name: RabbitMQ__Port
+          valueFrom:
+            configMapKeyRef:
+              name: catalogapi-config
+              key: RabbitMQ__Port
+        - name: RabbitMQ__Username
+          valueFrom:
+            secretKeyRef:
+              name: catalogapi-secrets
+              key: rabbitmq-username
+        - name: RabbitMQ__Password
+          valueFrom:
+            secretKeyRef:
+              name: catalogapi-secrets
+              key: rabbitmq-password
+        - name: RabbitMQ__Exchange
+          valueFrom:
+            configMapKeyRef:
+              name: catalogapi-config
+              key: RabbitMQ__Exchange
+        - name: AuthService__BaseUrl
+          valueFrom:
+            configMapKeyRef:
+              name: catalogapi-config
+              key: AuthService__BaseUrl
+        - name: Serilog__MinimumLevel__Default
+          valueFrom:
+            configMapKeyRef:
+              name: catalogapi-config
+              key: Serilog__MinimumLevel__Default
+        - name: Serilog__MinimumLevel__Override__Microsoft
+          valueFrom:
+            configMapKeyRef:
+              name: catalogapi-config
+              key: Serilog__MinimumLevel__Override__Microsoft
+        - name: Serilog__MinimumLevel__Override__System
+          valueFrom:
+            configMapKeyRef:
+              name: catalogapi-config
+              key: Serilog__MinimumLevel__Override__System
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: false
+        # Volume mounts podem ser adicionados se necessário para logs ou configurações adicionais

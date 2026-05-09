@@ -1,0 +1,18 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/src/">
+    <Project Path="src/CatalogAPI.API/CatalogAPI.API.csproj" />
+    <Project Path="src/CatalogAPI.Application/CatalogAPI.Application.csproj" />
+    <Project Path="src/CatalogAPI.CrossCutting/CatalogAPI.CrossCutting.csproj" />
+    <Project Path="src/CatalogAPI.Domain/CatalogAPI.Domain.csproj" />
+    <Project Path="src/CatalogAPI.Infrastructure/CatalogAPI.Infrastructure.csproj" />
+    <Project Path="src/Shared.Contracts/Shared.Contracts.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CatalogAPI.Tests/CatalogAPI.Tests.csproj" />
+  </Folder>
+</Solution>
