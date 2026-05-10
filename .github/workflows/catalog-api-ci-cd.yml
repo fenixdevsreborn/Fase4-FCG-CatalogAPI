@@ -1,6 +1,11 @@
 name: catalog-api-ci-cd
 
-# Requer: secret AWS_GITHUB_ROLE_ARN; secret GITOPS_TOKEN; variable GITOPS_REPOSITORY (ex.: org/Fase2-Orchestrator)
+# Requer no repositório GitHub:
+#   Secrets:  AWS_GITHUB_ROLE_ARN, DOCKERHUB_USERNAME, DOCKERHUB_TOKEN
+#             GITOPS_APP_PRIVATE_KEY (chave privada do GitHub App — ver docs/SECURITY-SETUP.md)
+#   Variables: GITOPS_REPOSITORY (ex.: org/Fase4-FCG-Orchestrator)
+#              GITOPS_APP_ID    (ID numérico do GitHub App)
+# Branch alvo: master. Push paralelo para AWS ECR e Docker Hub (<DOCKERHUB_USERNAME>/fcg-catalog-api).
 
 on:
   pull_request:
@@ -11,7 +16,7 @@ on:
       - "Dockerfile"
       - ".github/workflows/catalog-api-ci-cd.yml"
   push:
-    branches: [main]
+    branches: [master]
     paths:
       - "src/**"
       - "tests/**"
@@ -23,10 +28,12 @@ on:
 permissions:
   contents: read
   id-token: write
+  security-events: write
 
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: catalog-api
+  DOCKERHUB_REPOSITORY: fcg-catalog-api
   VALUES_REL_PATH: deploy/helm/fcg-platform/values-prod.yaml
 
 jobs:
@@ -35,14 +42,22 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@3951f0dfe7a07e2313ec93c75700083e2005cbab # v4.3.0
         with:
           dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.slnx') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
 
       - name: Restore
         run: dotnet restore CatalogAPI.slnx
@@ -62,19 +77,19 @@ jobs:
         run: dotnet test tests/CatalogAPI.Tests/CatalogAPI.Tests.csproj --configuration Release --no-build
 
       - name: Configure AWS credentials
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-        uses: aws-actions/configure-aws-credentials@v4
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
 
       - name: Login to Amazon ECR
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
 
-      - name: Build and push Docker image
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      - name: Build and push Docker image to ECR
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
@@ -84,27 +99,67 @@ jobs:
           echo "IMAGE_TAG=${IMAGE_TAG}" >> "$GITHUB_ENV"
           echo "ECR_REGISTRY=${ECR_REGISTRY}" >> "$GITHUB_ENV"
 
-      - name: Scan image with Trivy
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-        uses: aquasecurity/trivy-action@0.28.0
+      - name: Login to Docker Hub
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
-          image-ref: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-          format: table
-          exit-code: "1"
-          ignore-unfixed: true
-          severity: CRITICAL,HIGH
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Tag and push image to Docker Hub
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
+        run: |
+          DOCKERHUB_IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/${DOCKERHUB_REPOSITORY}"
+          docker tag "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}" "${DOCKERHUB_IMAGE}:${IMAGE_TAG}"
+          docker tag "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}" "${DOCKERHUB_IMAGE}:latest"
+          docker push "${DOCKERHUB_IMAGE}:${IMAGE_TAG}"
+          docker push "${DOCKERHUB_IMAGE}:latest"
+
+      - name: Instalar Trivy
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin v0.70.0
+
+      - name: Scan image com Trivy (SARIF)
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
+        run: |
+          trivy image --format sarif --output trivy-results.sarif \
+            "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+
+      - name: Upload Trivy SARIF to GitHub Security
+        if: always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master'))
+        uses: github/codeql-action/upload-sarif@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3.28.18
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Gate on Trivy CRITICAL/HIGH
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
+        run: |
+          trivy image --format table --exit-code 1 --ignore-unfixed --severity CRITICAL,HIGH \
+            "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+
+      - name: Generate GitHub App token (GitOps)
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
+        id: app-token
+        uses: actions/create-github-app-token@67e27a7eb7db372a1c61a7f9bdab8699e9ee57f7 # v1.11.3
+        with:
+          app-id: ${{ vars.GITOPS_APP_ID }}
+          private-key: ${{ secrets.GITOPS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: "Fase4-FCG-Orchestrator"
 
       - name: Checkout platform repository for GitOps
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-        uses: actions/checkout@v4
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ vars.GITOPS_REPOSITORY }}
           path: platform
-          token: ${{ secrets.GITOPS_TOKEN }}
-          ref: main
+          token: ${{ steps.app-token.outputs.token }}
+          ref: master
 
       - name: Update GitOps values file
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
         env:
           VALUES_REL_PATH: ${{ env.VALUES_REL_PATH }}
         run: |
@@ -127,7 +182,7 @@ jobs:
           PY
 
       - name: Commit and push GitOps change
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
         working-directory: platform
         run: |
           git config user.name "github-actions[bot]"
