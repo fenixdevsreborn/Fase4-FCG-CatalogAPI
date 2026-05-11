@@ -1,8 +1,68 @@
-# CatalogAPI
+# Fase4-FCG-CatalogAPI
 
 **Game Purchase Management System (API de Catálogo e Compras)**
 
-API RESTful construída com **.NET 10** e arquitetura limpa (*Clean Architecture*) para gerenciar catálogo de jogos, compras via eventos e biblioteca de usuários. Central no fluxo de compra da plataforma, expõe endpoints para navegação, compras e eventos integrados a serviços externos (PaymentsAPI, AuthService). 
+API RESTful construída com **.NET 10** e arquitetura limpa (*Clean Architecture*) para gerenciar catálogo de jogos, compras via eventos e biblioteca de usuários. Central no fluxo de compra da plataforma, expõe endpoints para navegação, compras e eventos integrados a serviços externos (PaymentsAPI, AuthService).
+
+> **Branch alvo da pipeline:** `master`.
+> **Registries:** AWS ECR (`catalog-api`) **e** Docker Hub (`<DOCKERHUB_USERNAME>/fcg-catalog-api`).
+> Pipeline: [`.github/workflows/catalog-api-ci-cd.yml`](.github/workflows/catalog-api-ci-cd.yml).
+> Recursos AWS dependentes: **DynamoDB** (catalog metadata), **ElastiCache Redis** (cache), **OpenSearch** (busca fuzzy) — todos provisionados pelo Terraform do `Fase4-FCG-Orchestrator`. IRSA dedicado (`fcg-prod-catalog-irsa`) permite acesso ao DynamoDB **sem credenciais**.
+
+---
+
+## ⚙️ Configuração obrigatória para automação AWS + Docker Hub
+
+> **Documentação master:** [`Fase4-FCG-Orchestrator/docs/MANUAL-STEPS.md`](../Fase4-FCG-Orchestrator/docs/MANUAL-STEPS.md). Resumo desta API:
+
+### 1. Pré-requisitos
+
+- Bootstrap AWS executado em `Fase4-FCG-Orchestrator/infra/terraform/bootstrap/`
+- Repositório Docker Hub `<DOCKERHUB_USERNAME>/fcg-catalog-api` criado
+- PAT Docker Hub Read & Write
+- PAT GitHub `contents:write` no `Fase4-FCG-Orchestrator`
+- Repositório ECR `catalog-api` (criado pelo Terraform principal)
+- DynamoDB, OpenSearch e Redis provisionados (pelo Terraform principal)
+
+### 2. Branch padrão
+
+A pipeline só dispara em push para **`master`**.
+
+### 3. Secrets e Variables
+
+| Tipo | Nome | Descrição |
+|------|------|-----------|
+| Secret | `AWS_GITHUB_ROLE_ARN` | ARN da role IAM do bootstrap |
+| Secret | `DOCKERHUB_USERNAME` | Username Docker Hub |
+| Secret | `DOCKERHUB_TOKEN` | PAT Docker Hub (Read & Write) |
+| Secret | `GITOPS_TOKEN` | PAT GitHub com `contents:write` no `Fase4-FCG-Orchestrator` |
+| Variable | `GITOPS_REPOSITORY` | `<seu-org>/Fase4-FCG-Orchestrator` |
+
+```powershell
+$ORG="seu-org"; $REPO="Fase4-FCG-CatalogAPI"
+gh secret   set AWS_GITHUB_ROLE_ARN --body "<role-arn>"     --repo "$ORG/$REPO"
+gh secret   set DOCKERHUB_USERNAME  --body "<dh-user>"      --repo "$ORG/$REPO"
+gh secret   set DOCKERHUB_TOKEN     --body "<dh-pat>"       --repo "$ORG/$REPO"
+gh secret   set GITOPS_TOKEN        --body "<gh-pat>"       --repo "$ORG/$REPO"
+gh variable set GITOPS_REPOSITORY   --body "$ORG/Fase4-FCG-Orchestrator" --repo "$ORG/$REPO"
+```
+
+### 4. O que a pipeline faz a cada push em `master`
+
+1. `dotnet build` + `dotnet test` (xUnit + Testcontainers)
+2. Auditoria NuGet (falha em High/Critical)
+3. ECR push (`catalog-api:<sha>`) + Docker Hub push (`<user>/fcg-catalog-api:<sha>` e `:latest`)
+4. Trivy scan
+5. GitOps commit em `Fase4-FCG-Orchestrator` → Argo CD rolling update
+
+### 5. Primeiro disparo manual
+
+```powershell
+gh workflow run catalog-api-ci-cd.yml --repo "$ORG/Fase4-FCG-CatalogAPI" --ref master
+```
+
+---
+
 
 ## Índice
 
@@ -15,7 +75,7 @@ API RESTful construída com **.NET 10** e arquitetura limpa (*Clean Architecture
 7. Pré-Requisitos e Variáveis de Ambiente
 8. Execução Local, Docker e Kubernetes
 9. Testes Automatizados
-10. Observações para Certificação Fase 2
+10. Observações para Fase 4 Tech Challenge
 
 ---
 
@@ -186,12 +246,15 @@ dotnet test
 
 ---
 
-## 10. Observações para Certificação Fase 2
+## 10. Observações para Fase 4 Tech Challenge
 
 * **Consistência transacional de eventos** por Outbox Pattern está implementada.
 * **Mensageria assíncrona** via RabbitMQ com MassTransit.
 * **Autenticação externa** delegada ao AuthService.
 * **Estrutura de documentação** é baseada em Swagger/OpenAPI.
-* **Monitoramento/HealthChecks** prontos para prontidão e liveness. 
+* **Monitoramento/HealthChecks** prontos para prontidão e liveness.
+* **NoSQL**: DynamoDB para metadados de catálogo via `AWSSDK.DynamoDBv2` (requisito Fase 4).
+* **Cache**: ElastiCache Redis via `StackExchange.Redis` / `IDistributedCache` (requisito Fase 4).
+* **Busca avançada**: OpenSearch com fuzzy search via `GET /api/v1/games/search?q=` (requisito Fase 4).
 
 ---

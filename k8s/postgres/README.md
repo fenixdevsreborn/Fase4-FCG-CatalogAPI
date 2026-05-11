@@ -15,13 +15,13 @@ Este diretório contém configurações de PostgreSQL **apenas para desenvolvime
 ## Quando NÃO Usar
 
 - ❌ Produção
-- ❌ Deploy com o Orchestrator (use `Fase2-Orchestrator/k8s/postgres-catalog/`)
+- ❌ Deploy com o Orchestrator (use `Fase4-FCG-Orchestrator/k8s/postgres-catalog/`)
 - ❌ Ambiente compartilhado
 
 ## Configuração de Produção
 
 Para produção/orquestração, use:
-- `Fase2-Orchestrator/k8s/postgres-catalog/` (namespace `fiap-gamestore`)
+- `Fase4-FCG-Orchestrator/k8s/postgres-catalog/` (namespace `fiap-gamestore`)
 
 ## Diferenças
 
