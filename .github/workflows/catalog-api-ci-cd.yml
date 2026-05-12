@@ -178,11 +178,13 @@ jobs:
               r"(catalog-api:\s*\n(?:[^\n]*\n)*?\s*repository:\s*)([^\n]+)(\n\s*tag:\s*)([^\n]+)",
               re.MULTILINE,
           )
-          new_text, count = pattern.subn(
-              rf"\g<1>{os.environ['ECR_REGISTRY']}/{os.environ['ECR_REPOSITORY']}\g<3>\"{os.environ['IMAGE_TAG']}\"",
-              text,
-              count=1,
+          replacement = (
+              "\\g<1>"
+              + f"{os.environ['ECR_REGISTRY']}/{os.environ['ECR_REPOSITORY']}"
+              + "\\g<3>"
+              + f"\"{os.environ['IMAGE_TAG']}\""
           )
+          new_text, count = pattern.subn(replacement, text, count=1)
           if count != 1:
               raise SystemExit("catalog-api block not found in values-prod.yaml")
           path.write_text(new_text)
