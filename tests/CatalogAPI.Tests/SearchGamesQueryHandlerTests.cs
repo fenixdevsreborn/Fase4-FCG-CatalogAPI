@@ -4,6 +4,7 @@ using CatalogAPI.Application.UseCases.Games.SearchGames;
 using CatalogAPI.Domain.Entities;
 using CatalogAPI.Domain.Interfaces;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Moq;
 
 namespace CatalogAPI.Tests;
@@ -17,6 +18,7 @@ public class SearchGamesQueryHandlerTests
         var searchService = new Mock<IGameSearchService>();
         var metadataStore = new Mock<IGameMetadataStore>();
         var cacheService = new Mock<ICatalogCacheService>();
+        var logger = new Mock<ILogger<SearchGamesQueryHandler>>();
         var gameId = Guid.NewGuid();
 
         searchService.SetupGet(service => service.IsEnabled).Returns(false);
@@ -56,7 +58,8 @@ public class SearchGamesQueryHandlerTests
             gameRepository.Object,
             searchService.Object,
             metadataStore.Object,
-            cacheService.Object);
+            cacheService.Object,
+            logger.Object);
 
         var result = await handler.Handle(new SearchGamesQuery("hal", 1, 20), CancellationToken.None);
 
@@ -65,6 +68,61 @@ public class SearchGamesQueryHandlerTests
         result.Items[0].Tags.Should().Contain("space");
         cacheService.Verify(
             cache => cache.SetAsync(It.IsAny<string>(), It.IsAny<PaginatedResultDto<GameDto>>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_ShouldFallbackToRepository_WhenOpenSearchFails()
+    {
+        var gameRepository = new Mock<IGameRepository>();
+        var searchService = new Mock<IGameSearchService>();
+        var metadataStore = new Mock<IGameMetadataStore>();
+        var cacheService = new Mock<ICatalogCacheService>();
+        var logger = new Mock<ILogger<SearchGamesQueryHandler>>();
+        var gameId = Guid.NewGuid();
+
+        searchService.SetupGet(service => service.IsEnabled).Returns(true);
+        searchService
+            .Setup(service => service.SearchAsync("zelda", 1, 20, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("OpenSearch index creation failed"));
+        cacheService.Setup(cache => cache.GetCatalogVersionAsync(It.IsAny<CancellationToken>())).ReturnsAsync("v4");
+        cacheService.Setup(cache => cache.GetAsync<PaginatedResultDto<GameDto>>(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PaginatedResultDto<GameDto>?)null);
+
+        gameRepository
+            .Setup(repository => repository.SearchAsync("zelda", 1, 20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([
+                new Game
+                {
+                    Id = gameId,
+                    Name = "Zelda",
+                    Description = "Adventure",
+                    Price = 200m,
+                    Genre = "Adventure",
+                    Developer = "Nintendo",
+                    ImageUrl = string.Empty,
+                    ReleaseDate = DateTimeOffset.UtcNow
+                }
+            ]);
+        gameRepository
+            .Setup(repository => repository.SearchTotalCountAsync("zelda", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+        metadataStore.Setup(store => store.GetManyAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, GameMetadataDto>());
+
+        var handler = new SearchGamesQueryHandler(
+            gameRepository.Object,
+            searchService.Object,
+            metadataStore.Object,
+            cacheService.Object,
+            logger.Object);
+
+        var result = await handler.Handle(new SearchGamesQuery("zelda", 1, 20), CancellationToken.None);
+
+        result.TotalCount.Should().Be(1);
+        result.Items[0].Name.Should().Be("Zelda");
+        gameRepository.Verify(
+            repository => repository.SearchAsync("zelda", 1, 20, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 }
