@@ -11,8 +11,6 @@ using CatalogAPI.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Polly;
-using Polly.Extensions.Http;
 
 namespace CatalogAPI.CrossCutting.DependencyInjection;
 
@@ -76,35 +74,16 @@ public static class InfrastructureServiceExtensions
         // Add Background Service to process Outbox messages
         services.AddHostedService<OutboxProcessorService>();
 
-        // Add Auth Service with Polly policies
-        services.AddHttpClient<IAuthService, HttpAuthService>()
-            .AddPolicyHandler(GetRetryPolicy())
-            .AddPolicyHandler(GetCircuitBreakerPolicy());
-
         services.AddSingleton<ICatalogCacheService, CatalogCacheService>();
         services.AddSingleton<IGameMetadataStore, GameMetadataStore>();
         services.AddSingleton<IGameSearchService, OpenSearchGameSearchService>();
         services.AddScoped<IGameProjectionSyncService, GameProjectionSyncService>();
+        services.AddScoped<IGameSearchMaintenanceService, GameSearchMaintenanceService>();
 
         // Register Seeders
         services.AddScoped<ISeeder, GameSeeder>();
         services.AddScoped<DatabaseSeederService>();
 
         return services;
-    }
-
-    private static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()
-    {
-        return HttpPolicyExtensions
-            .HandleTransientHttpError()
-            .WaitAndRetryAsync(3, retryAttempt => 
-                TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)));
-    }
-
-    private static IAsyncPolicy<HttpResponseMessage> GetCircuitBreakerPolicy()
-    {
-        return HttpPolicyExtensions
-            .HandleTransientHttpError()
-            .CircuitBreakerAsync(5, TimeSpan.FromSeconds(30));
     }
 }

@@ -1,8 +1,10 @@
 using Asp.Versioning;
+using CatalogAPI.API.Common.Extensions;
 using CatalogAPI.Application.DTOs;
 using CatalogAPI.Application.UseCases.UserGames.GetUserGame;
 using CatalogAPI.Application.UseCases.UserGames.GetUserGames;
 using Mediator;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CatalogAPI.API.Controllers.V1;
@@ -10,6 +12,7 @@ namespace CatalogAPI.API.Controllers.V1;
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/user-games")]
+[Authorize]
 public class UserGamesController : ControllerBase
 {
     private readonly IMediator _mediator;
@@ -30,19 +33,12 @@ public class UserGamesController : ControllerBase
     public async Task<ActionResult<PaginatedResultDto<UserGameDto>>> GetUserGames(
         CancellationToken cancellationToken = default)
     {
-        // Get user from context (set by AuthenticationMiddleware)
-        var userContext = HttpContext.Items["User"] as UserContextDto;
-        if (userContext == null)
-        {
-            return Unauthorized(new { message = "User not authenticated" });
-        }
-
-        var userId = Guid.Parse(userContext.UserId);
+        var userId = User.GetUserId();
         var query = new GetUserGamesQuery(userId);
         var result = await _mediator.Send(query, cancellationToken);
 
         _logger.LogInformation("Retrieved {Count} games from user library. UserId: {UserId}", 
-            result.TotalCount, userContext.UserId);
+            result.TotalCount, userId);
 
         return Ok(result);
     }
@@ -58,14 +54,7 @@ public class UserGamesController : ControllerBase
         Guid gameId,
         CancellationToken cancellationToken = default)
     {
-        // Get user from context (set by AuthenticationMiddleware)
-        var userContext = HttpContext.Items["User"] as UserContextDto;
-        if (userContext == null)
-        {
-            return Unauthorized(new { message = "User not authenticated" });
-        }
-
-        var userId = Guid.Parse(userContext.UserId);
+        var userId = User.GetUserId();
         var query = new GetUserGameQuery(userId, gameId);
         var result = await _mediator.Send(query, cancellationToken);
 

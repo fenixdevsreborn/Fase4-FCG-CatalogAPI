@@ -1,4 +1,6 @@
 using Asp.Versioning;
+using CatalogAPI.API.Common.Extensions;
+using CatalogAPI.Application.Abstractions;
 using CatalogAPI.Application.DTOs;
 using CatalogAPI.Application.UseCases.Games.CreateGame;
 using CatalogAPI.Application.UseCases.Games.DeleteGame;
@@ -6,7 +8,9 @@ using CatalogAPI.Application.UseCases.Games.GetGames;
 using CatalogAPI.Application.UseCases.Games.SearchGames;
 using CatalogAPI.Application.UseCases.Games.UpdateGame;
 using CatalogAPI.Domain.Exceptions;
+using CatalogAPI.Domain.Interfaces;
 using Mediator;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CatalogAPI.API.Controllers.V1;
@@ -17,11 +21,22 @@ namespace CatalogAPI.API.Controllers.V1;
 public class GamesController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly IGameRepository _gameRepository;
+    private readonly IGameMetadataStore _gameMetadataStore;
+    private readonly IGameSearchMaintenanceService _searchMaintenanceService;
     private readonly ILogger<GamesController> _logger;
 
-    public GamesController(IMediator mediator, ILogger<GamesController> logger)
+    public GamesController(
+        IMediator mediator,
+        IGameRepository gameRepository,
+        IGameMetadataStore gameMetadataStore,
+        IGameSearchMaintenanceService searchMaintenanceService,
+        ILogger<GamesController> logger)
     {
         _mediator = mediator;
+        _gameRepository = gameRepository;
+        _gameMetadataStore = gameMetadataStore;
+        _searchMaintenanceService = searchMaintenanceService;
         _logger = logger;
     }
 
@@ -62,8 +77,86 @@ public class GamesController : ControllerBase
     }
 
     /// <summary>
+    /// Get a single game by id
+    /// </summary>
+    [HttpGet("{gameId:guid}")]
+    [ProducesResponseType(typeof(GameDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<GameDto>> GetGame(
+        Guid gameId,
+        CancellationToken cancellationToken = default)
+    {
+        var game = await _gameRepository.GetByIdAsync(gameId, cancellationToken);
+        if (game == null)
+        {
+            return NotFound(new { message = $"Game with id {gameId} was not found." });
+        }
+
+        var metadata = await _gameMetadataStore.GetAsync(gameId, cancellationToken);
+        return Ok(new GameDto
+        {
+            Id = game.Id,
+            Name = game.Name,
+            Description = game.Description,
+            Price = game.Price,
+            Genre = game.Genre,
+            ImageUrl = game.ImageUrl,
+            Developer = game.Developer,
+            ReleaseDate = game.ReleaseDate,
+            Tags = metadata?.Tags ?? [],
+            Metadata = metadata?.Metadata ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        });
+    }
+
+    /// <summary>
+    /// Get search index status (requires Admin authentication)
+    /// </summary>
+    [Authorize(Roles = "Admin")]
+    [HttpGet("search/status")]
+    [ProducesResponseType(typeof(GameSearchStatusDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<GameSearchStatusDto>> GetSearchStatus(
+        CancellationToken cancellationToken = default)
+    {
+        var status = await _searchMaintenanceService.GetStatusAsync(cancellationToken);
+        return Ok(status);
+    }
+
+    /// <summary>
+    /// Reindex all games into OpenSearch (requires Admin authentication)
+    /// </summary>
+    [Authorize(Roles = "Admin")]
+    [HttpPost("search/reindex")]
+    [ProducesResponseType(typeof(GameReindexResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<GameReindexResultDto>> ReindexSearch(
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _searchMaintenanceService.ReindexAsync(cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Get catalog metrics for admin dashboard (requires Admin authentication)
+    /// </summary>
+    [Authorize(Roles = "Admin")]
+    [HttpGet("admin/summary")]
+    [ProducesResponseType(typeof(GameCatalogSummaryDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<GameCatalogSummaryDto>> GetAdminSummary(
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _searchMaintenanceService.GetSummaryAsync(cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Create a new game (requires Admin authentication)
     /// </summary>
+    [Authorize(Roles = "Admin")]
     [HttpPost]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -74,26 +167,13 @@ public class GamesController : ControllerBase
         [FromBody] CreateGameDto createGameDto,
         CancellationToken cancellationToken = default)
     {
-        // Get user from context (set by AuthenticationMiddleware)
-        var userContext = HttpContext.Items["User"] as UserContextDto;
-        if (userContext == null)
-        {
-            return Unauthorized(new { message = "User not authenticated" });
-        }
-
-        // Verify Admin role (dupla verificação)
-        if (!userContext.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase))
-        {
-            return Forbid();
-        }
-
         try
         {
             var command = new CreateGameCommand(createGameDto);
             var gameId = await _mediator.Send(command, cancellationToken);
 
             _logger.LogInformation("Game created successfully. GameId: {GameId}, CreatedBy: {UserId}", 
-                gameId, userContext.UserId);
+                gameId, User.GetUserId());
 
             return CreatedAtAction(
                 nameof(GetGames),
@@ -109,6 +189,7 @@ public class GamesController : ControllerBase
     /// <summary>
     /// Update an existing game (requires Admin authentication)
     /// </summary>
+    [Authorize(Roles = "Admin")]
     [HttpPut("{gameId}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -120,26 +201,13 @@ public class GamesController : ControllerBase
         [FromBody] UpdateGameDto updateGameDto,
         CancellationToken cancellationToken = default)
     {
-        // Get user from context (set by AuthenticationMiddleware)
-        var userContext = HttpContext.Items["User"] as UserContextDto;
-        if (userContext == null)
-        {
-            return Unauthorized(new { message = "User not authenticated" });
-        }
-
-        // Verify Admin role (dupla verificação)
-        if (!userContext.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase))
-        {
-            return Forbid();
-        }
-
         try
         {
             var command = new UpdateGameCommand(gameId, updateGameDto);
             var result = await _mediator.Send(command, cancellationToken);
 
             _logger.LogInformation("Game updated successfully. GameId: {GameId}, UpdatedBy: {UserId}", 
-                gameId, userContext.UserId);
+                gameId, User.GetUserId());
 
             return Ok(new { message = "Game updated successfully" });
         }
@@ -152,6 +220,7 @@ public class GamesController : ControllerBase
     /// <summary>
     /// Delete a game (requires Admin authentication)
     /// </summary>
+    [Authorize(Roles = "Admin")]
     [HttpDelete("{gameId}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -161,26 +230,13 @@ public class GamesController : ControllerBase
         Guid gameId,
         CancellationToken cancellationToken = default)
     {
-        // Get user from context (set by AuthenticationMiddleware)
-        var userContext = HttpContext.Items["User"] as UserContextDto;
-        if (userContext == null)
-        {
-            return Unauthorized(new { message = "User not authenticated" });
-        }
-
-        // Verify Admin role (dupla verificação)
-        if (!userContext.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase))
-        {
-            return Forbid();
-        }
-
         try
         {
             var command = new DeleteGameCommand(gameId);
             await _mediator.Send(command, cancellationToken);
 
             _logger.LogInformation("Game deleted successfully. GameId: {GameId}, DeletedBy: {UserId}", 
-                gameId, userContext.UserId);
+                gameId, User.GetUserId());
 
             return NoContent();
         }

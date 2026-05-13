@@ -22,9 +22,6 @@
 ```bash
 # CatalogAPI
 docker build -t catalogapi:latest -f Dockerfile .
-
-# Auth Service
-docker build -t auth-service:latest -f auth-service/Dockerfile ./auth-service
 ```
 
 ### 2. Verificar Cluster (se necessário)

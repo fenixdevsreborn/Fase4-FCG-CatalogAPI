@@ -17,8 +17,6 @@ resources:
   - rabbitmq/pvc.yaml
   - rabbitmq/deployment.yaml
   - rabbitmq/service.yaml
-  - auth-service/deployment.yaml
-  - auth-service/service.yaml
   - catalogapi/deployment.yaml
   - catalogapi/service.yaml
   - catalogapi/hpa.yaml

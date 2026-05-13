@@ -41,11 +41,6 @@ Get-ChildItem -Path rabbitmq -Filter *.yaml | ForEach-Object {
     kubectl apply -f $_.FullName
 }
 
-Write-Host "🔒 Deployando Auth Service..." -ForegroundColor Cyan
-Get-ChildItem -Path auth-service -Filter *.yaml | ForEach-Object {
-    kubectl apply -f $_.FullName
-}
-
 Write-Host "📚 Deployando CatalogAPI..." -ForegroundColor Cyan
 Get-ChildItem -Path catalogapi -Filter *.yaml | ForEach-Object {
     kubectl apply -f $_.FullName

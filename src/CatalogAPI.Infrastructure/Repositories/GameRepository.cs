@@ -50,6 +50,14 @@ public class GameRepository : IGameRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<List<Game>> GetAllForIndexingAsync(CancellationToken cancellationToken = default)
+    {
+        return await _context.Games
+            .OrderBy(g => g.Name)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<int> SearchTotalCountAsync(string searchTerm, CancellationToken cancellationToken = default)
     {
         var normalizedSearch = $"%{searchTerm.Trim()}%";

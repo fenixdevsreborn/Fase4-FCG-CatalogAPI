@@ -34,9 +34,6 @@ kubectl apply -f postgres/
 echo "🐰 Deployando RabbitMQ..."
 kubectl apply -f rabbitmq/
 
-echo "🔒 Deployando Auth Service..."
-kubectl apply -f auth-service/
-
 echo "📚 Deployando CatalogAPI..."
 kubectl apply -f catalogapi/
 
@@ -49,7 +46,6 @@ kubectl apply -f ingress.yaml
 echo "⏳ Aguardando pods ficarem prontos..."
 kubectl wait --for=condition=ready pod -l app=postgres -n catalogapi --timeout=300s || true
 kubectl wait --for=condition=ready pod -l app=rabbitmq -n catalogapi --timeout=300s || true
-kubectl wait --for=condition=ready pod -l app=auth-service -n catalogapi --timeout=300s || true
 kubectl wait --for=condition=ready pod -l app=catalogapi -n catalogapi --timeout=300s || true
 
 echo "✅ Deploy concluído!"

@@ -76,11 +76,26 @@ spec:
             configMapKeyRef:
               name: catalogapi-config
               key: RabbitMQ__Exchange
-        - name: AuthService__BaseUrl
+        - name: Jwt__Key
+          valueFrom:
+            secretKeyRef:
+              name: catalogapi-secrets
+              key: jwt-key
+        - name: Jwt__Issuer
           valueFrom:
             configMapKeyRef:
               name: catalogapi-config
-              key: AuthService__BaseUrl
+              key: Jwt__Issuer
+        - name: Jwt__Audience
+          valueFrom:
+            configMapKeyRef:
+              name: catalogapi-config
+              key: Jwt__Audience
+        - name: OpenSearch__Enabled
+          valueFrom:
+            configMapKeyRef:
+              name: catalogapi-config
+              key: OpenSearch__Enabled
         - name: Serilog__MinimumLevel__Default
           valueFrom:
             configMapKeyRef:

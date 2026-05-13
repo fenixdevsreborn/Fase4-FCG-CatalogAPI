@@ -2,7 +2,7 @@
 
 **Game Purchase Management System (API de Catálogo e Compras)**
 
-API RESTful construída com **.NET 10** e arquitetura limpa (*Clean Architecture*) para gerenciar catálogo de jogos, compras via eventos e biblioteca de usuários. Central no fluxo de compra da plataforma, expõe endpoints para navegação, compras e eventos integrados a serviços externos (PaymentsAPI, AuthService).
+API RESTful construída com **.NET 10** e arquitetura limpa (*Clean Architecture*) para gerenciar catálogo de jogos, compras via eventos e biblioteca de usuários. Central no fluxo de compra da plataforma, expõe endpoints para navegação, compras e eventos integrados a serviços externos (UsersAPI/JWT e PaymentsAPI).
 
 > **Branch alvo da pipeline:** `master`.
 > **Registries:** AWS ECR (`catalog-api`) **e** Docker Hub (`<DOCKERHUB_USERNAME>/fcg-catalog-api`).
@@ -89,7 +89,7 @@ O **CatalogAPI** permite:
 * Gerenciar criação/atualização/deleção de jogos (*Admin*).
 * Orquestrar eventos de compra de forma transacional e resiliente. 
 
-O serviço integra um *AuthService* externo para validação de tokens e um Message Broker (*RabbitMQ*) para comunicação assíncrona com outros microsserviços. 
+O serviço valida JWTs emitidos pela UsersAPI e usa um Message Broker (*RabbitMQ*) para comunicação assíncrona com outros microsserviços. 
 
 ---
 
@@ -98,7 +98,7 @@ O serviço integra um *AuthService* externo para validação de tokens e um Mess
 | Serviço                   | Responsabilidade                                                                |
 | ------------------------- | ------------------------------------------------------------------------------- |
 | **CatalogAPI**            | Gerenciar catálogo, aceitar pedidos de compra e processar eventos de pagamento. |
-| **AuthService (externo)** | Validar Bearer Token e retornar dados de usuário/roles.                         |
+| **UsersAPI**              | Emitir JWTs com claims padronizadas de usuário e role.                          |
 | **PaymentsAPI**           | Processar pagamento de pedidos (eventos).                                       |
 
 *Observação*: A API publica eventos de compra e consome eventos de pagamento aprovado/rejeitado.
@@ -179,7 +179,7 @@ Padrões adicionais:
 * Docker + Docker Compose
 * PostgreSQL
 * RabbitMQ
-* Serviço de Auth (Mock ou real)
+* Chave JWT compartilhada com a UsersAPI
 
 ### Variáveis de Ambiente
 
@@ -189,7 +189,9 @@ Padrões adicionais:
 | `RabbitMQ__Host`                     | Host do RabbitMQ                        |               |
 | `RabbitMQ__Username`                 | Usuário RabbitMQ                        |               |
 | `RabbitMQ__Password`                 | Senha RabbitMQ                          |               |
-| `AuthService__BaseUrl`               | URL do serviço de autenticação          |               |
+| `Jwt__Key`                           | Chave compartilhada para validar JWT    |               |
+| `Jwt__Issuer`                        | Emissor esperado do JWT                 |               |
+| `Jwt__Audience`                      | Audience esperada do JWT                |               |
 | `ASPNETCORE_ENVIRONMENT`             | Ambiente (*Development* / *Production*) |  |
 
 > *Certifique-se de configurar Secrets para credenciais sensíveis quando em produção.*
@@ -250,11 +252,11 @@ dotnet test
 
 * **Consistência transacional de eventos** por Outbox Pattern está implementada.
 * **Mensageria assíncrona** via RabbitMQ com MassTransit.
-* **Autenticação externa** delegada ao AuthService.
+* **Autenticação JWT** validada localmente com roles `User` e `Admin`.
 * **Estrutura de documentação** é baseada em Swagger/OpenAPI.
 * **Monitoramento/HealthChecks** prontos para prontidão e liveness.
 * **NoSQL**: DynamoDB para metadados de catálogo via `AWSSDK.DynamoDBv2` (requisito Fase 4).
 * **Cache**: ElastiCache Redis via `StackExchange.Redis` / `IDistributedCache` (requisito Fase 4).
-* **Busca avançada**: OpenSearch com fuzzy search via `GET /api/v1/games/search?q=` (requisito Fase 4).
+* **Busca avançada**: OpenSearch com fuzzy search via `GET /api/games/search?q=` (requisito Fase 4).
 
 ---

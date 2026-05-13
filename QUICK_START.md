@@ -13,6 +13,7 @@ Services available:
 - **Health Check:** http://localhost:8080/health
 - **PostgreSQL:** localhost:5432
 - **RabbitMQ Management:** http://localhost:15672 (guest/guest)
+- **OpenSearch:** http://localhost:9200
 - **Database Browser (Adminer):** http://localhost:8081
 
 ### Option 2: Local Development
@@ -29,10 +30,10 @@ docker run -d --name rabbitmq-catalog -p 5672:5672 -p 15672:15672 \
 # 3. Apply migrations
 dotnet ef database update -p src/CatalogAPI.Infrastructure -s src/CatalogAPI.API
 
-# 4. Start mock auth service
-cd src/CatalogAPI.API/auth-service
-npm install
-npm start
+# 4. Configure JWT values shared with UsersAPI
+export Jwt__Key="super-secret-dev-key-change-in-production-32chars"
+export Jwt__Issuer="UsersAPI"
+export Jwt__Audience="UsersAPI"
 
 # 5. Run API (in new terminal)
 cd f:\FIAP\FaseII\Fase2-CatalogAPI
@@ -50,15 +51,16 @@ curl http://localhost:8080/health
 
 ### 2. Get Games (Paginated)
 ```bash
-curl http://localhost:8080/api/v1/games?pageNumber=1&pageSize=20
+curl http://localhost:8080/api/games?page=1&pageSize=20
 ```
 
 ### 3. Purchase a Game
 ```bash
-curl -X POST http://localhost:8080/api/v1/games/550e8400-e29b-41d4-a716-446655440000/purchase \
-  -H "Authorization: Bearer any-token-here" \
+curl -X POST http://localhost:8080/api/v1/orders \
+  -H "Authorization: Bearer <token-from-users-api>" \
   -H "Content-Type: application/json" \
-  -H "X-Correlation-Id: f47ac10b-58cc-4372-a567-0e02b2c3d479"
+  -H "X-Correlation-Id: f47ac10b-58cc-4372-a567-0e02b2c3d479" \
+  -d '{ "gameId": "550e8400-e29b-41d4-a716-446655440000" }'
 ```
 
 Expected Response (201 Created):
@@ -180,18 +182,18 @@ After starting, verify:
 ## 🎯 Architecture at a Glance
 
 ```
-Request → Correlation ID → Auth → CQRS Handler → UnitOfWork Transaction
+Request → Correlation ID → JWT Auth → CQRS Handler → UnitOfWork Transaction
    ↓        ↓                ↓        ↓             ↓
-  API    Middleware     HTTPAuth   Mediator    UserGame+OutboxMessage
-                        Service     Dispatch      ↓
-                      (Polly)                  SaveChanges
-                      (CircuitBr)              MassTransit.Publish
-                                               Commit/Rollback
-                                                    ↓
-                                         OutboxProcessorService
-                                         (5s interval, batch 100)
-                                                    ↓
-                                            RabbitMQ
+  API    Middleware     Claims    Mediator    UserGame+OutboxMessage
+                        + Roles    Dispatch      ↓
+                                             SaveChanges
+                                             MassTransit.Publish
+                                             Commit/Rollback
+                                                  ↓
+                                       OutboxProcessorService
+                                       (5s interval, batch 100)
+                                                  ↓
+                                              RabbitMQ
 ```
 
 ## 💡 Key Features
@@ -199,11 +201,10 @@ Request → Correlation ID → Auth → CQRS Handler → UnitOfWork Transaction
 - ✅ **Outbox Pattern** for reliable event publishing
 - ✅ **Transactional consistency** with UnitOfWork
 - ✅ **Correlation ID tracking** for debugging
-- ✅ **Polly retry + Circuit Breaker** for resilience
 - ✅ **Structured logging** to file and console
 - ✅ **Health checks** for dependencies
 - ✅ **Pagination** (20 items per page)
-- ✅ **Bearer token validation** with external service
+- ✅ **Bearer token validation** with JWT and role claims
 - ✅ **Compensating transactions** on failure
 
 ## 📞 Need Help?

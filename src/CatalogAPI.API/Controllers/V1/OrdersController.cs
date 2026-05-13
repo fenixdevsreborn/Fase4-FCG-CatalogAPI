@@ -1,8 +1,10 @@
 using Asp.Versioning;
+using CatalogAPI.API.Common.Extensions;
 using CatalogAPI.Application.DTOs;
 using CatalogAPI.Application.UseCases.Orders.CreateOrder;
 using CatalogAPI.Domain.Exceptions;
 using Mediator;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CatalogAPI.API.Controllers.V1;
@@ -10,6 +12,7 @@ namespace CatalogAPI.API.Controllers.V1;
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v1/orders")]
+[Authorize]
 public class OrdersController : ControllerBase
 {
     private readonly IMediator _mediator;
@@ -34,27 +37,20 @@ public class OrdersController : ControllerBase
         [FromBody] CreateOrderRequest request,
         CancellationToken cancellationToken = default)
     {
-        // Get user from context (set by AuthenticationMiddleware)
-        var userContext = HttpContext.Items["User"] as UserContextDto;
-        if (userContext == null)
-        {
-            return Unauthorized(new { message = "User not authenticated" });
-        }
-
-        // Get correlation ID from context
+        var userId = User.GetUserId();
         var correlationId = HttpContext.Items["CorrelationId"] as Guid? ?? Guid.NewGuid();
 
         try
         {
             var command = new CreateOrderCommand(
-                Guid.Parse(userContext.UserId),
+                userId,
                 request.GameId,
                 correlationId);
 
             var orderId = await _mediator.Send(command, cancellationToken);
 
             _logger.LogInformation("Order created successfully. OrderId: {OrderId}, GameId: {GameId}, UserId: {UserId}",
-                orderId, request.GameId, userContext.UserId);
+                orderId, request.GameId, userId);
 
             return CreatedAtAction(
                 nameof(CreateOrder),

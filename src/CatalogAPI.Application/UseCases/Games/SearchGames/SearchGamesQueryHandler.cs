@@ -53,6 +53,7 @@ public sealed class SearchGamesQueryHandler : IQueryHandler<SearchGamesQuery, Pa
                     query.PageNumber,
                     query.PageSize,
                     cancellationToken);
+                result.SearchProvider = _gameSearchService.ProviderName;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -66,6 +67,8 @@ public sealed class SearchGamesQueryHandler : IQueryHandler<SearchGamesQuery, Pa
                     query.PageNumber,
                     query.PageSize,
                     cancellationToken);
+                result.SearchProvider = "PostgresFallback";
+                result.SearchFallbackReason = ex.Message;
             }
         }
         else
@@ -75,6 +78,8 @@ public sealed class SearchGamesQueryHandler : IQueryHandler<SearchGamesQuery, Pa
                 query.PageNumber,
                 query.PageSize,
                 cancellationToken);
+            result.SearchProvider = "PostgresFallback";
+            result.SearchFallbackReason = "OpenSearch disabled";
         }
 
         await _catalogCacheService.SetAsync(cacheKey, result, TimeSpan.FromMinutes(5), cancellationToken);
@@ -102,7 +107,8 @@ public sealed class SearchGamesQueryHandler : IQueryHandler<SearchGamesQuery, Pa
             Items = gameDtos,
             TotalCount = totalCount,
             PageNumber = pageNumber,
-            PageSize = pageSize
+            PageSize = pageSize,
+            SearchProvider = "PostgresFallback"
         };
     }
 

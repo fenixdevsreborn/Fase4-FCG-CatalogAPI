@@ -1,10 +1,14 @@
 using Asp.Versioning;
+using CatalogAPI.CrossCutting.HealthChecks;
 using HealthChecks.UI.Client;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using System.Text;
 
 namespace CatalogAPI.CrossCutting.DependencyInjection;
 
@@ -30,6 +34,33 @@ public static class ApiServiceExtensions
             );
         })
         .AddMvc();
+
+        var jwtKey = configuration["Jwt:Key"]
+            ?? throw new InvalidOperationException("Jwt:Key is required.");
+
+        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                options.MapInboundClaims = false;
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidateAudience = true,
+                    ValidateLifetime = true,
+                    ValidateIssuerSigningKey = true,
+                    ValidIssuer = configuration["Jwt:Issuer"],
+                    ValidAudience = configuration["Jwt:Audience"],
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+                    RoleClaimType = "role",
+                    NameClaimType = "name",
+                    ClockSkew = TimeSpan.FromMinutes(2)
+                };
+            });
+
+        services.AddAuthorization(options =>
+        {
+            options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
+        });
 
         // Add Swagger/OpenAPI with versioning support
         services.AddSwaggerGen(options =>
@@ -85,7 +116,10 @@ public static class ApiServiceExtensions
                     Password = rabbitMqPassword
                 };
                 return factory.CreateConnectionAsync().GetAwaiter().GetResult();
-            }, name: "rabbitmq");
+            }, name: "rabbitmq")
+            .AddCheck<OpenSearchHealthCheck>("opensearch")
+            .AddCheck<RedisHealthCheck>("redis")
+            .AddCheck<DynamoDbHealthCheck>("dynamodb");
 
         return services;
     }
@@ -104,6 +138,9 @@ public static class ApiServiceExtensions
         {
             ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
         });
+
+        app.UseAuthentication();
+        app.UseAuthorization();
 
         app.MapControllers();
 

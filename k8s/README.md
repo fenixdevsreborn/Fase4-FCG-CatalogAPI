@@ -19,9 +19,6 @@ k8s/
 │   ├── deployment.yaml              # Deployment RabbitMQ
 │   ├── service.yaml                 # Service RabbitMQ
 │   └── pvc.yaml                     # PersistentVolumeClaim
-├── auth-service/
-│   ├── deployment.yaml              # Deployment Auth Service
-│   └── service.yaml                 # Service Auth Service
 ├── catalogapi/
 │   ├── deployment.yaml              # Deployment CatalogAPI
 │   ├── service.yaml                 # Service CatalogAPI
@@ -55,7 +52,6 @@ k8s/
 
 5. **Imagens Docker** construídas e disponíveis
    - CatalogAPI: precisa fazer build da imagem
-   - Auth Service: precisa fazer build da imagem
    - PostgreSQL e RabbitMQ: usam imagens públicas
 
 ## Build das Imagens Docker
@@ -73,17 +69,6 @@ docker tag catalogapi:latest registry.example.com/catalogapi:v1.0.0
 docker push registry.example.com/catalogapi:v1.0.0
 ```
 
-### Auth Service
-
-```bash
-# No diretório auth-service
-docker build -t auth-service:latest -f Dockerfile .
-
-# Se usar um registry:
-docker tag auth-service:latest registry.example.com/auth-service:v1.0.0
-docker push registry.example.com/auth-service:v1.0.0
-```
-
 ### Para Minikube (usar imagens locais)
 
 ```bash
@@ -92,7 +77,6 @@ eval $(minikube docker-env)
 
 # Build das imagens
 docker build -t catalogapi:latest -f Dockerfile .
-docker build -t auth-service:latest -f auth-service/Dockerfile ./auth-service
 ```
 
 ## Deploy
@@ -105,10 +89,9 @@ A ordem de deploy é importante devido às dependências:
 2. **Secrets e ConfigMaps**
 3. **PostgreSQL** (Deployment + Service + PVC)
 4. **RabbitMQ** (Deployment + Service + PVC)
-5. **Auth Service** (Deployment + Service)
-6. **CatalogAPI** (Deployment + Service)
-7. **HPA** (HorizontalPodAutoscaler)
-8. **Ingress** (opcional)
+5. **CatalogAPI** (Deployment + Service)
+6. **HPA** (HorizontalPodAutoscaler)
+7. **Ingress** (opcional)
 
 ### Deploy Completo
 
@@ -119,7 +102,6 @@ kubectl apply -f k8s/configmap.yaml
 kubectl apply -f k8s/secrets.yaml
 kubectl apply -f k8s/postgres/
 kubectl apply -f k8s/rabbitmq/
-kubectl apply -f k8s/auth-service/
 kubectl apply -f k8s/catalogapi/
 kubectl apply -f k8s/catalogapi/hpa.yaml
 kubectl apply -f k8s/ingress.yaml  # Opcional

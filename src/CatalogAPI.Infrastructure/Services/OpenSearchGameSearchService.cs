@@ -44,6 +44,8 @@ public sealed class OpenSearchGameSearchService : IGameSearchService
         _options.Enabled &&
         !string.IsNullOrWhiteSpace(_options.Endpoint);
 
+    public string ProviderName => "OpenSearch";
+
     public async Task<PaginatedResultDto<GameDto>> SearchAsync(
         string query,
         int pageNumber,
@@ -71,7 +73,7 @@ public sealed class OpenSearchGameSearchService : IGameSearchService
                         .Field(document => document.Developer, 1.5)
                         .Field("tags^3"))
                     .Fuzziness(Fuzziness.Auto)
-                    .Operator(Operator.And)))
+                    .Operator(Operator.Or)))
                 .Sort(sort => sort
                     .Descending(SortSpecialField.Score)
                     .Ascending(document => document.Name)),
@@ -87,8 +89,54 @@ public sealed class OpenSearchGameSearchService : IGameSearchService
             Items = response.Hits.Select(hit => hit.Source.ToDto()).ToList(),
             TotalCount = Convert.ToInt32(response.Total),
             PageNumber = pageNumber,
-            PageSize = pageSize
+            PageSize = pageSize,
+            SearchProvider = ProviderName
         };
+    }
+
+    public async Task<GameSearchStatusDto> GetStatusAsync(
+        int databaseCount,
+        CancellationToken cancellationToken = default)
+    {
+        var status = new GameSearchStatusDto
+        {
+            Enabled = IsEnabled,
+            Available = false,
+            Provider = IsEnabled ? ProviderName : "PostgresFallback",
+            IndexName = _options.IndexName,
+            DatabaseCount = databaseCount
+        };
+
+        if (!IsEnabled || _client == null)
+        {
+            status.Error = "OpenSearch is disabled.";
+            return status;
+        }
+
+        try
+        {
+            await EnsureIndexExistsAsync(cancellationToken);
+
+            var count = await _client.CountAsync<GameSearchDocument>(
+                descriptor => descriptor.Index(_options.IndexName),
+                cancellationToken);
+
+            if (!count.IsValid)
+            {
+                status.Error = count.ServerError?.ToString() ?? count.OriginalException?.Message;
+                return status;
+            }
+
+            status.Available = true;
+            status.IndexedCount = Convert.ToInt32(count.Count);
+            status.MissingCount = Math.Max(0, databaseCount - status.IndexedCount.Value);
+            return status;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            status.Error = ex.Message;
+            return status;
+        }
     }
 
     public async Task IndexAsync(GameDto game, CancellationToken cancellationToken = default)
@@ -154,7 +202,19 @@ public sealed class OpenSearchGameSearchService : IGameSearchService
             {
                 var create = await _client.Indices.CreateAsync(
                     _options.IndexName,
-                    descriptor => descriptor.Map<GameSearchDocument>(map => map.AutoMap()),
+                    descriptor => descriptor
+                        .Map<GameSearchDocument>(map => map
+                            .Properties(properties => properties
+                                .Keyword(keyword => keyword.Name(document => document.Id))
+                                .Text(text => text.Name(document => document.Name))
+                                .Text(text => text.Name(document => document.Description))
+                                .Text(text => text.Name(document => document.Genre))
+                                .Text(text => text.Name(document => document.Developer))
+                                .Text(text => text.Name(document => document.Tags))
+                                .Keyword(keyword => keyword.Name(document => document.ImageUrl))
+                                .Number(number => number.Name(document => document.Price).Type(NumberType.Double))
+                                .Date(date => date.Name(document => document.ReleaseDate))
+                                .Object<Dictionary<string, string>>(obj => obj.Name(document => document.Metadata)))),
                     cancellationToken);
 
                 if (!create.IsValid)

@@ -1,4 +1,5 @@
 using CatalogAPI.API.Middlewares;
+using CatalogAPI.Application.Abstractions;
 using CatalogAPI.Application.UseCases.UserGames.ProcessPayment;
 using CatalogAPI.CrossCutting.DependencyInjection;
 using CatalogAPI.CrossCutting.Logging;
@@ -113,19 +114,8 @@ try
                 }
                 catch (Exception ex)
                 {
-                    Log.Warning(ex, "Failed to apply migrations. Creating database from current model...");
-                    try
-                    {
-                        // Drop existing database if it exists (for dev only)
-                        await dbContext.Database.EnsureDeletedAsync();
-                        // Create new database from current model
-                        await dbContext.Database.EnsureCreatedAsync();
-                        Log.Information("Database created successfully from model");
-                    }
-                    catch (Exception innerEx)
-                    {
-                        Log.Error(innerEx, "Failed to ensure database creation");
-                    }
+                    Log.Fatal(ex, "Failed to apply CatalogAPI migrations");
+                    throw;
                 }
                 finally
                 {
@@ -151,7 +141,8 @@ try
             }
             catch (Exception migrationEx)
             {
-                Log.Error(migrationEx, "Failed to apply migrations");
+                Log.Fatal(migrationEx, "Failed to apply CatalogAPI migrations");
+                throw;
             }
         }
         finally
@@ -185,12 +176,38 @@ try
         {
             Log.Error(ex, "Erro ao executar seeders. A aplicação continuará sem dados iniciais.");
         }
+
+        if (builder.Configuration.GetValue<bool>("OpenSearch:Enabled"))
+        {
+            try
+            {
+                var searchMaintenance = scope.ServiceProvider.GetRequiredService<IGameSearchMaintenanceService>();
+                var reindexResult = await searchMaintenance.ReindexAsync();
+                Log.Information(
+                    "Search reindex after seed finished. DatabaseCount: {DatabaseCount}, IndexedCount: {IndexedCount}, FailedCount: {FailedCount}",
+                    reindexResult.DatabaseCount,
+                    reindexResult.IndexedCount,
+                    reindexResult.FailedCount);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Search reindex after seed failed. The application will keep running with repository fallback.");
+            }
+        }
     }
 
     // Configure middleware pipeline
     app.UseMiddleware<CorrelationIdMiddleware>();
+    app.UseSerilogRequestLogging(options =>
+    {
+        options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+        {
+            diagnosticContext.Set("CorrelationId", httpContext.Items["CorrelationId"]);
+            diagnosticContext.Set("UserId", httpContext.User.FindFirst("sub")?.Value);
+            diagnosticContext.Set("Role", httpContext.User.FindFirst("role")?.Value);
+        };
+    });
     app.UseMiddleware<ExceptionHandlingMiddleware>();
-    app.UseMiddleware<AuthenticationMiddleware>();
 
     app.UseApiConfiguration();
 

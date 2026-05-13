@@ -1,3 +1,5 @@
+using Serilog.Context;
+
 namespace CatalogAPI.API.Middlewares;
 
 public class CorrelationIdMiddleware
@@ -24,7 +26,10 @@ public class CorrelationIdMiddleware
             return Task.CompletedTask;
         });
 
-        await _next(context);
+        using (LogContext.PushProperty("CorrelationId", correlationId))
+        {
+            await _next(context);
+        }
     }
 
     private static Guid GetOrCreateCorrelationId(HttpContext context)
