@@ -75,8 +75,7 @@ public sealed class OpenSearchGameSearchService : IGameSearchService
                     .Fuzziness(Fuzziness.Auto)
                     .Operator(Operator.Or)))
                 .Sort(sort => sort
-                    .Descending(SortSpecialField.Score)
-                    .Ascending(document => document.Name)),
+                    .Descending(SortSpecialField.Score)),
             cancellationToken);
 
         if (!response.IsValid)
@@ -206,7 +205,12 @@ public sealed class OpenSearchGameSearchService : IGameSearchService
                         .Map<GameSearchDocument>(map => map
                             .Properties(properties => properties
                                 .Keyword(keyword => keyword.Name(document => document.Id))
-                                .Text(text => text.Name(document => document.Name))
+                                .Text(text => text
+                                    .Name(document => document.Name)
+                                    .Fields(fields => fields
+                                        .Keyword(keyword => keyword
+                                            .Name("keyword")
+                                            .IgnoreAbove(256))))
                                 .Text(text => text.Name(document => document.Description))
                                 .Text(text => text.Name(document => document.Genre))
                                 .Text(text => text.Name(document => document.Developer))
