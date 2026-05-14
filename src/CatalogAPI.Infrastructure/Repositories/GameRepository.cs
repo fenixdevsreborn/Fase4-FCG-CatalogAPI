@@ -35,15 +35,20 @@ public class GameRepository : IGameRepository
         int pageSize,
         CancellationToken cancellationToken = default)
     {
-        var normalizedSearch = $"%{searchTerm.Trim()}%";
+        var term = searchTerm.Trim();
+        var normalizedSearch = $"%{term}%";
 
         return await _context.Games
             .Where(g =>
                 EF.Functions.ILike(g.Name, normalizedSearch) ||
                 EF.Functions.ILike(g.Description, normalizedSearch) ||
                 EF.Functions.ILike(g.Genre, normalizedSearch) ||
-                EF.Functions.ILike(g.Developer, normalizedSearch))
-            .OrderBy(g => g.Name)
+                EF.Functions.ILike(g.Developer, normalizedSearch) ||
+                EF.Functions.TrigramsSimilarity(g.Name, term) >= 0.2 ||
+                EF.Functions.TrigramsSimilarity(g.Genre, term) >= 0.3 ||
+                EF.Functions.TrigramsSimilarity(g.Developer, term) >= 0.3)
+            .OrderByDescending(g => EF.Functions.TrigramsSimilarity(g.Name, term))
+            .ThenBy(g => g.Name)
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
             .AsNoTracking()
@@ -60,14 +65,18 @@ public class GameRepository : IGameRepository
 
     public async Task<int> SearchTotalCountAsync(string searchTerm, CancellationToken cancellationToken = default)
     {
-        var normalizedSearch = $"%{searchTerm.Trim()}%";
+        var term = searchTerm.Trim();
+        var normalizedSearch = $"%{term}%";
 
         return await _context.Games.CountAsync(
             g =>
                 EF.Functions.ILike(g.Name, normalizedSearch) ||
                 EF.Functions.ILike(g.Description, normalizedSearch) ||
                 EF.Functions.ILike(g.Genre, normalizedSearch) ||
-                EF.Functions.ILike(g.Developer, normalizedSearch),
+                EF.Functions.ILike(g.Developer, normalizedSearch) ||
+                EF.Functions.TrigramsSimilarity(g.Name, term) >= 0.2 ||
+                EF.Functions.TrigramsSimilarity(g.Genre, term) >= 0.3 ||
+                EF.Functions.TrigramsSimilarity(g.Developer, term) >= 0.3,
             cancellationToken);
     }
 

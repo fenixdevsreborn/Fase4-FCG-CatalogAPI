@@ -39,6 +39,8 @@ public class CatalogDbContext : DbContext
   {
     base.OnModelCreating(modelBuilder);
 
+    modelBuilder.HasPostgresExtension("pg_trgm");
+
     // Configure Game entity
     modelBuilder.Entity<Game>(entity =>
     {

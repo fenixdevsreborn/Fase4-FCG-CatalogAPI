@@ -131,7 +131,7 @@ public static class ApiServiceExtensions
         app.UseSwaggerUI(options =>
         {
             options.SwaggerEndpoint("/swagger/v1/swagger.json", "Catalog API v1");
-            options.RoutePrefix = "swagger"; // Swagger em /swagger para consistência
+            options.RoutePrefix = "docs";
         });
 
         app.MapHealthChecks("/health", new HealthCheckOptions
